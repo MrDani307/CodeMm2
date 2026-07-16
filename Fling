@@ -1,0 +1,191 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "FlingGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 250, 0, 180)
+Frame.Position = UDim2.new(0.5, -125, 0.5, -90)
+Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Frame.BorderSizePixel = 0
+Frame.Active = true
+Frame.Draggable = true
+Frame.Parent = ScreenGui
+
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 8)
+Corner.Parent = Frame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.BackgroundTransparency = 1
+Title.Text = "Fling Menu"
+Title.TextColor3 = Color3.fromRGB(255, 50, 50)
+Title.TextSize = 18
+Title.Font = Enum.Font.SourceSansBold
+Title.Parent = Frame
+
+local DropdownBtn = Instance.new("TextButton")
+DropdownBtn.Size = UDim2.new(0.9, 0, 0, 35)
+DropdownBtn.Position = UDim2.new(0.05, 0, 0.25, 0)
+DropdownBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+DropdownBtn.Text = "Выберите цель ▼"
+DropdownBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+DropdownBtn.TextSize = 14
+DropdownBtn.Font = Enum.Font.SourceSans
+DropdownBtn.Parent = Frame
+
+local DropdownCorner = Instance.new("UICorner")
+DropdownCorner.CornerRadius = UDim.new(0, 5)
+DropdownCorner.Parent = DropdownBtn
+
+local DropdownScroll = Instance.new("ScrollingFrame")
+DropdownScroll.Size = UDim2.new(0.9, 0, 0, 150)
+DropdownScroll.Position = UDim2.new(0.05, 0, 0.47, 0)
+DropdownScroll.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+DropdownScroll.BorderSizePixel = 0
+DropdownScroll.Visible = false
+DropdownScroll.ZIndex = 5
+DropdownScroll.ScrollBarThickness = 6
+DropdownScroll.Parent = Frame
+
+local DropdownCorner2 = Instance.new("UICorner")
+DropdownCorner2.CornerRadius = UDim.new(0, 5)
+DropdownCorner2.Parent = DropdownScroll
+
+local Layout = Instance.new("UIListLayout")
+Layout.Padding = UDim.new(0, 2)
+Layout.Parent = DropdownScroll
+
+local FlingButton = Instance.new("TextButton")
+FlingButton.Size = UDim2.new(0.9, 0, 0, 40)
+FlingButton.Position = UDim2.new(0.05, 0, 0.65, 0)
+FlingButton.BackgroundColor3 = Color3.fromRGB(255, 0, 50)
+FlingButton.Text = "START FLING"
+FlingButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+FlingButton.TextSize = 16
+FlingButton.Font = Enum.Font.SourceSansBold
+FlingButton.Parent = Frame
+
+local ButtonCorner = Instance.new("UICorner")
+ButtonCorner.CornerRadius = UDim.new(0, 6)
+ButtonCorner.Parent = FlingButton
+
+local selectedPlayer = nil
+
+local function updateList()
+	for _, child in ipairs(DropdownScroll:GetChildren()) do
+		if child:IsA("TextButton") then
+			child:Destroy()
+		end
+	end
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(1, 0, 0, 30)
+			btn.BackgroundTransparency = 1
+			btn.Text = "  " .. player.DisplayName .. " (@" .. player.Name .. ")"
+			btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+			btn.TextSize = 14
+			btn.TextXAlignment = Enum.TextXAlignment.Left
+			btn.Font = Enum.Font.SourceSans
+			btn.ZIndex = 6
+			btn.Parent = DropdownScroll
+
+			btn.MouseButton1Click:Connect(function()
+				selectedPlayer = player
+				DropdownBtn.Text = player.DisplayName .. " ▼"
+				DropdownScroll.Visible = false
+			end)
+		end
+	end
+	DropdownScroll.CanvasSize = UDim2.new(0, 0, 0, Layout.AbsoluteContentSize.Y)
+end
+
+DropdownBtn.MouseButton1Click:Connect(function()
+	DropdownScroll.Visible = not DropdownScroll.Visible
+	if DropdownScroll.Visible then
+		updateList()
+	end
+end)
+
+Players.PlayerAdded:Connect(updateList)
+Players.PlayerRemoving:Connect(function(player)
+	if selectedPlayer == player then
+		selectedPlayer = nil
+		DropdownBtn.Text = "Выберите цель ▼"
+	end
+	updateList()
+end)
+
+local function resetVelocity(root)
+	if root then
+		root.Velocity = Vector3.new(0, 0, 0)
+		root.RotVelocity = Vector3.new(0, 0, 0)
+		root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+		root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+	end
+end
+
+FlingButton.MouseButton1Click:Connect(function()
+	if not selectedPlayer then return end
+	local targetChar = selectedPlayer.Character
+	local myChar = LocalPlayer.Character
+	if not targetChar or not myChar then return end
+
+	local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+	local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+	if not targetRoot or not myRoot then return end
+
+	DropdownScroll.Visible = false
+
+	local oldPos = myRoot.CFrame
+	resetVelocity(myRoot)
+
+	local bodyVelocity = Instance.new("BodyVelocity")
+	bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+	bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	bodyVelocity.Parent = myRoot
+
+	local bodyAngularVelocity = Instance.new("BodyAngularVelocity")
+	bodyAngularVelocity.AngularVelocity = Vector3.new(0, 12000, 0)
+	bodyAngularVelocity.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+	bodyAngularVelocity.Parent = myRoot
+
+	local flingTime = 1.8
+	local startTime = tick()
+
+	local connection
+	connection = RunService.Heartbeat:Connect(function()
+		if tick() - startTime > flingTime or not targetRoot.Parent or not myRoot.Parent then
+			connection:Disconnect()
+			bodyVelocity:Destroy()
+			bodyAngularVelocity:Destroy()
+			
+			resetVelocity(myRoot)
+			myRoot.CFrame = oldPos
+			resetVelocity(myRoot)
+			
+			task.delay(3, function()
+				if myRoot and myRoot.Parent then
+					local distance = (myRoot.Position - oldPos.Position).Magnitude
+					if distance >= 10 then
+						resetVelocity(myRoot)
+						myRoot.CFrame = oldPos
+						resetVelocity(myRoot)
+					end
+				end
+			end)
+			return
+		end
+
+		local yOscillation = math.sin(tick() * 60) * 1.2
+		myRoot.CFrame = targetRoot.CFrame * CFrame.new(0.1, yOscillation, 0.1)
+		myRoot.Velocity = Vector3.new(20000, 20000, 20000)
+	end)
+end)
