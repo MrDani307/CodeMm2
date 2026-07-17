@@ -8,8 +8,8 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 250, 0, 180)
-Frame.Position = UDim2.new(0.5, -125, 0.5, -90)
+Frame.Size = UDim2.new(0, 250, 0, 250)
+Frame.Position = UDim2.new(0.5, -125, 0.5, -125)
 Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 Frame.BorderSizePixel = 0
 Frame.Active = true
@@ -31,7 +31,7 @@ Title.Parent = Frame
 
 local DropdownBtn = Instance.new("TextButton")
 DropdownBtn.Size = UDim2.new(0.9, 0, 0, 35)
-DropdownBtn.Position = UDim2.new(0.05, 0, 0.25, 0)
+DropdownBtn.Position = UDim2.new(0.05, 0, 0.15, 0)
 DropdownBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 DropdownBtn.Text = "Выберите цель ▼"
 DropdownBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -44,8 +44,8 @@ DropdownCorner.CornerRadius = UDim.new(0, 5)
 DropdownCorner.Parent = DropdownBtn
 
 local DropdownScroll = Instance.new("ScrollingFrame")
-DropdownScroll.Size = UDim2.new(0.9, 0, 0, 150)
-DropdownScroll.Position = UDim2.new(0.05, 0, 0.47, 0)
+DropdownScroll.Size = UDim2.new(0.9, 0, 0, 120)
+DropdownScroll.Position = UDim2.new(0.05, 0, 0.27, 0)
 DropdownScroll.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 DropdownScroll.BorderSizePixel = 0
 DropdownScroll.Visible = false
@@ -62,18 +62,46 @@ Layout.Padding = UDim.new(0, 2)
 Layout.Parent = DropdownScroll
 
 local FlingButton = Instance.new("TextButton")
-FlingButton.Size = UDim2.new(0.9, 0, 0, 40)
-FlingButton.Position = UDim2.new(0.05, 0, 0.65, 0)
+FlingButton.Size = UDim2.new(0.9, 0, 0, 35)
+FlingButton.Position = UDim2.new(0.05, 0, 0.32, 0)
 FlingButton.BackgroundColor3 = Color3.fromRGB(255, 0, 50)
 FlingButton.Text = "START FLING"
 FlingButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-FlingButton.TextSize = 16
+FlingButton.TextSize = 14
 FlingButton.Font = Enum.Font.SourceSansBold
 FlingButton.Parent = Frame
 
 local ButtonCorner = Instance.new("UICorner")
-ButtonCorner.CornerRadius = UDim.new(0, 6)
+ButtonCorner.CornerRadius = UDim.new(0, 5)
 ButtonCorner.Parent = FlingButton
+
+local FlingMurderBtn = Instance.new("TextButton")
+FlingMurderBtn.Size = UDim2.new(0.9, 0, 0, 35)
+FlingMurderBtn.Position = UDim2.new(0.05, 0, 0.50, 0)
+FlingMurderBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+FlingMurderBtn.Text = "FLING MURDER"
+FlingMurderBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+FlingMurderBtn.TextSize = 14
+FlingMurderBtn.Font = Enum.Font.SourceSansBold
+FlingMurderBtn.Parent = Frame
+
+local MurderCorner = Instance.new("UICorner")
+MurderCorner.CornerRadius = UDim.new(0, 5)
+MurderCorner.Parent = FlingMurderBtn
+
+local FlingSheriffBtn = Instance.new("TextButton")
+FlingSheriffBtn.Size = UDim2.new(0.9, 0, 0, 35)
+FlingSheriffBtn.Position = UDim2.new(0.05, 0, 0.68, 0)
+FlingSheriffBtn.BackgroundColor3 = Color3.fromRGB(0, 80, 180)
+FlingSheriffBtn.Text = "FLING SHERIFF"
+FlingSheriffBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+FlingSheriffBtn.TextSize = 14
+FlingSheriffBtn.Font = Enum.Font.SourceSansBold
+FlingSheriffBtn.Parent = Frame
+
+local SheriffCorner = Instance.new("UICorner")
+SheriffCorner.CornerRadius = UDim.new(0, 5)
+SheriffCorner.Parent = FlingSheriffBtn
 
 local selectedPlayer = nil
 
@@ -132,9 +160,9 @@ local function resetVelocity(root)
 	end
 end
 
-FlingButton.MouseButton1Click:Connect(function()
-	if not selectedPlayer then return end
-	local targetChar = selectedPlayer.Character
+local function executeFling(targetPlayer)
+	if not targetPlayer then return end
+	local targetChar = targetPlayer.Character
 	local myChar = LocalPlayer.Character
 	if not targetChar or not myChar then return end
 
@@ -188,4 +216,48 @@ FlingButton.MouseButton1Click:Connect(function()
 		myRoot.CFrame = targetRoot.CFrame * CFrame.new(0.1, yOscillation, 0.1)
 		myRoot.Velocity = Vector3.new(20000, 20000, 20000)
 	end)
+end
+
+FlingButton.MouseButton1Click:Connect(function()
+	executeFling(selectedPlayer)
+end)
+
+local function findRoles()
+	local murder, sheriff = nil, nil
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			local char = player.Character
+			local backpack = player:FindFirstChild("Backpack")
+			
+			local hasKnife = false
+			local hasRevolver = false
+			
+			if char then
+				if char:FindFirstChild("Knife") then hasKnife = true end
+				if char:FindFirstChild("Gun") or char:FindFirstChild("Revolver") then hasRevolver = true end
+			end
+			if backpack then
+				if backpack:FindFirstChild("Knife") then hasKnife = true end
+				if backpack:FindFirstChild("Gun") or backpack:FindFirstChild("Revolver") then hasRevolver = true end
+			end
+			
+			if hasKnife then murder = player end
+			if hasRevolver then sheriff = player end
+		end
+	end
+	return murder, sheriff
+end
+
+FlingMurderBtn.MouseButton1Click:Connect(function()
+	local murder, _ = findRoles()
+	if murder then
+		executeFling(murder)
+	end
+end)
+
+FlingSheriffBtn.MouseButton1Click:Connect(function()
+	local _, sheriff = findRoles()
+	if sheriff then
+		executeFling(sheriff)
+	end
 end)
