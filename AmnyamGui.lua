@@ -1,6 +1,3 @@
--- AMNYAM HUB v1.3 | mm2
--- Advanced GUI for Roblox
-
 local AMNYAM_HUB = {}
 
 local Players = game:GetService("Players")
@@ -11,7 +8,6 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Colors
 local C = {
     Cyan    = Color3.fromRGB(47, 224, 208),
     Blue    = Color3.fromRGB(47, 209, 255),
@@ -49,7 +45,6 @@ local function tween(inst, props, dur, style, dir)
     return t
 end
 
--- ===== MINIMALIST ICONS =====
 local function makeEye(parent, color)
     local c = new("Frame", {Parent = parent, Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, ZIndex = parent.ZIndex + 1})
     local eye = new("Frame", {Parent = c, AnchorPoint = Vector2.new(0.5,0.5), Size = UDim2.new(0,16,0,10), Position = UDim2.new(0.5,0,0.5,0), BackgroundTransparency = 1, ZIndex = c.ZIndex})
@@ -59,7 +54,6 @@ local function makeEye(parent, color)
     new("UICorner", {Parent = pupil, CornerRadius = UDim.new(1,0)})
 end
 
--- Beautiful Exit Icon (stylized X with glow)
 local function makeExitIcon(parent, color)
     local c = new("Frame", {Parent = parent, Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, ZIndex = parent.ZIndex + 1})
     
@@ -104,7 +98,6 @@ local function makeExitIcon(parent, color)
     return {line1 = line1, line2 = line2, glow = glow, glowStroke = glowStroke}
 end
 
--- ===== POSITION SAVE/LOAD =====
 local POS_FILE = "amnyam_hub_pos.json"
 
 local function saveDragPos(pos)
@@ -124,7 +117,6 @@ local function loadDragPos()
     return UDim2.new(0, 20, 0, 20)
 end
 
--- ===== CREATE =====
 function AMNYAM_HUB:Create()
     local sg = new("ScreenGui", {
         Name = "AMNYAM_HUB", 
@@ -135,7 +127,6 @@ function AMNYAM_HUB:Create()
         IgnoreGuiInset = true
     })
 
-    -- Main frame
     local main = new("Frame", {
         Name = "Main", 
         Parent = sg, 
@@ -147,10 +138,8 @@ function AMNYAM_HUB:Create()
         Active = true
     })
     
-    -- ROUNDED CORNERS
     new("UICorner", {Parent = main, CornerRadius = UDim.new(0, 18)})
 
-    -- ROUNDED ANIMATED BORDER
     local mainStroke = new("UIStroke", {
         Parent = main, 
         Color = C.Cyan, 
@@ -159,7 +148,6 @@ function AMNYAM_HUB:Create()
         LineJoinMode = Enum.LineJoinMode.Round
     })
     
-    -- Living glow
     spawn(function()
         while true do
             tween(mainStroke, {Color = C.Teal}, 2.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
@@ -177,7 +165,6 @@ function AMNYAM_HUB:Create()
         ColorSequenceKeypoint.new(1, Color3.fromRGB(3,10,18))
     }), Rotation = 160})
 
-    -- Clip container for radial glows — NOW WITH Rounded Corners so ovals don't peek out
     local bgClip = new("Frame", {
         Parent = main, 
         Name = "BgClip", 
@@ -200,7 +187,6 @@ function AMNYAM_HUB:Create()
     radial(C.Blue, 0.18, 0.15, 0.85, 0.45)
     radial(C.Blue, 0.08, 0.50, 0.50, 0.60)
 
-    -- Particles
     local pFolder = new("Folder", {Parent = main, Name = "Particles"})
     local pColors = {C.Cyan, C.Blue, C.Teal, C.Purple, C.Pink, C.Yellow}
     for i = 1, 26 do
@@ -221,7 +207,6 @@ function AMNYAM_HUB:Create()
         end)
     end
 
-    -- ===== DRAG BAR =====
     local dragBar = new("Frame", {
         Parent = main,
         Name = "DragBar",
@@ -233,7 +218,6 @@ function AMNYAM_HUB:Create()
         Active = false
     })
 
-    -- Exit Button
     local exitBtn = new("TextButton", {
         Parent = main, 
         Name = "ExitBtn", 
@@ -260,7 +244,6 @@ function AMNYAM_HUB:Create()
         tween(exitIconParts.glowStroke, {Transparency = 0.8}, 0.2)
     end)
 
-    -- ===== MAIN GUI DRAG LOGIC =====
     local mainDragging = false
     local dragStartCursor = nil
     local dragStartPos = nil
@@ -297,7 +280,6 @@ function AMNYAM_HUB:Create()
         end
     end)
 
-    -- ===== DRAGGABLE MINIMIZE BUTTON =====
     local dragGui = new("ScreenGui", {
         Name = "AMNYAM_Drag", 
         Parent = PlayerGui, 
@@ -335,7 +317,6 @@ function AMNYAM_HUB:Create()
     })
     new("UICorner", {Parent = dragShadow, CornerRadius = UDim.new(0, 14)})
 
-    -- Amnyam Icon Image (drag button)
     local dragImg = new("ImageLabel", {
         Parent = dragBtn,
         Size = UDim2.new(0, 40, 0, 40),
@@ -345,7 +326,6 @@ function AMNYAM_HUB:Create()
         ZIndex = 101,
     })
 
-    -- Fallback letter
     local fallbackLabel = new("TextLabel", {
         Parent = dragBtn,
         Size = UDim2.new(1, 0, 1, 0),
@@ -358,7 +338,6 @@ function AMNYAM_HUB:Create()
         AutoLocalize = false,
     })
 
-    -- ===== SIDEBAR =====
     local sidebar = new("Frame", {
         Parent = main, 
         Size = UDim2.new(0,190,1,0), 
@@ -372,7 +351,6 @@ function AMNYAM_HUB:Create()
 
     local brand = new("Frame", {Parent = sidebar, Size = UDim2.new(1,-20,0,42), Position = UDim2.new(0,10,0,14), BackgroundTransparency = 1, ZIndex = 3})
     
-    -- Amnyam icon in brand (same image as drag button)
     local brandImg = new("ImageLabel", {
         Parent = brand,
         Size = UDim2.new(0, 28, 0, 28),
@@ -383,7 +361,6 @@ function AMNYAM_HUB:Create()
     })
     new("UICorner", {Parent = brandImg, CornerRadius = UDim.new(0, 8)})
     
-    -- Fallback colored square if image fails to load
     local fallbackLogo = new("Frame", {
         Parent = brand,
         Size = UDim2.new(0, 28, 0, 28),
@@ -401,7 +378,6 @@ function AMNYAM_HUB:Create()
     new("TextLabel", {Parent = brandText, Size = UDim2.new(0,40,0,18), Position = UDim2.new(0,58,0,2), BackgroundTransparency = 1, Text = "HUB", TextColor3 = C.Cyan, TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 5, AutoLocalize = false})
     new("TextLabel", {Parent = brandText, Size = UDim2.new(1,0,0,14), Position = UDim2.new(0,0,0,20), BackgroundTransparency = 1, Text = "v1.3 | Universal", TextColor3 = C.Muted, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 5, AutoLocalize = false})
 
-    -- Try to load amnyam image from URL (used for both drag button and brand)
     spawn(function()
         local success = pcall(function()
             local url = "https://raw.githubusercontent.com/MrDani307/CodeMm2/refs/heads/main/amnyam.png"
@@ -449,7 +425,6 @@ function AMNYAM_HUB:Create()
     end)
     new("TextLabel", {Parent = foot, Size = UDim2.new(1,-12,1,0), Position = UDim2.new(0,12,0,0), BackgroundTransparency = 1, Text = "Connected", TextColor3 = C.Muted, TextSize = 10, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 4, AutoLocalize = false})
 
-    -- ===== CONTENT =====
     local content = new("Frame", {Parent = main, Size = UDim2.new(1,-190,1,0), Position = UDim2.new(0,190,0,0), BackgroundTransparency = 1, ZIndex = 2})
 
     local header = new("Frame", {Parent = content, Size = UDim2.new(1,0,0,50), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 3})
@@ -498,7 +473,6 @@ function AMNYAM_HUB:Create()
     new("TextLabel", {Parent = note, Size = UDim2.new(1,-28,0,18), Position = UDim2.new(0,14,0,8), BackgroundTransparency = 1, Text = "Outline", TextColor3 = C.Cyan, TextSize = 12, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 6, AutoLocalize = false})
     new("TextLabel", {Parent = note, Size = UDim2.new(1,-28,0,30), Position = UDim2.new(0,14,0,26), BackgroundTransparency = 1, Text = "May not work on some devices or 32-bit executors.", TextColor3 = C.Muted, TextSize = 11, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true, ZIndex = 6, AutoLocalize = false})
 
-    -- Minimize button drag logic (delta-based)
     local miniDragging = false
     local miniDragStartCursor = nil
     local miniDragStartPos = nil
@@ -539,7 +513,6 @@ function AMNYAM_HUB:Create()
         end
     end)
 
-    -- Click to restore (only if not dragged)
     local clickStartPos = nil
     dragBtn.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -557,7 +530,6 @@ function AMNYAM_HUB:Create()
         end
     end)
 
-    -- Exit click
     exitBtn.MouseButton1Click:Connect(function()
         main.Visible = false
         dragGui.Enabled = true
@@ -573,7 +545,6 @@ function AMNYAM_HUB:Create()
         tween(dragShadow, {Size = UDim2.new(0, 50, 0, 50)}, 0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
     end)
 
-    -- Intro animation
     main.Size = UDim2.new(1, -60, 1, -60)
     main.Position = UDim2.new(0, 30, 0, 30)
     tween(main, {Size = UDim2.new(1, -40, 1, -40), Position = UDim2.new(0, 20, 0, 20)}, 0.5, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
