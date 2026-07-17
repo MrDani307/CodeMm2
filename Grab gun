@@ -1,0 +1,41 @@
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "TouchGunGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local TouchGunBtn = Instance.new("TextButton")
+TouchGunBtn.Size = UDim2.new(0, 130, 0, 45)
+TouchGunBtn.Position = UDim2.new(0.5, -65, 0.5, -22)
+TouchGunBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 180)
+TouchGunBtn.Text = "TOUCH GUN"
+TouchGunBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+TouchGunBtn.TextSize = 14
+TouchGunBtn.Font = Enum.Font.SourceSansBold
+TouchGunBtn.Active = true
+TouchGunBtn.Draggable = true
+TouchGunBtn.Parent = ScreenGui
+
+local TouchGunCorner = Instance.new("UICorner")
+TouchGunCorner.CornerRadius = UDim.new(0, 6)
+TouchGunCorner.Parent = TouchGunBtn
+
+local function findGunDrop()
+	return Workspace:FindFirstChild("GunDrop", true)
+end
+
+TouchGunBtn.MouseButton1Click:Connect(function()
+	local myChar = LocalPlayer.Character
+	local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+	if not myRoot then return end
+	
+	local gunDrop = findGunDrop()
+	if gunDrop and firetouchinterest then
+		firetouchinterest(myRoot, gunDrop, 0)
+		task.wait()
+		firetouchinterest(myRoot, gunDrop, 1)
+	end
+end)
