@@ -1,30 +1,63 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
-local Camera = Workspace.CurrentCamera
-local LocalPlayer = Players.LocalPlayer
-local CoreGui = game:GetService("CoreGui")
-local UserInputService = game:GetService("UserInputService")
-local Stats = game:GetService("Stats")
 local TweenService = game:GetService("TweenService")
+local Stats = game:GetService("Stats")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
 
-local Colors = {
-    Surface = Color3.fromRGB(20, 20, 28),
-    Accent = Color3.fromRGB(255, 255, 255),
-    AccentLight = Color3.fromRGB(200, 200, 200),
-    AccentDark = Color3.fromRGB(120, 120, 120),
-    Text = Color3.fromRGB(255, 255, 255),
-    Murder = Color3.fromRGB(255, 255, 255),
+local Config = {
+    ESP = {
+        Enabled = true,
+        FillTransparency = 0.6,
+        OutlineTransparency = 0,
+        Colors = {
+            Murderer = Color3.fromRGB(255, 0, 0),
+            Sheriff = Color3.fromRGB(0, 120, 255),
+            Hero = Color3.fromRGB(255, 255, 0),
+            Innocent = Color3.fromRGB(0, 255, 100),
+            Unknown = Color3.fromRGB(255, 255, 255),
+        }
+    },
+    OverdrivePrediction = {
+        VerticalMultiplier = 1.72,
+        HorizontalMultiplier = 1.84,
+        PositionOffset = Vector3.new(-0.09, -0.10, 0),
+        PredictionInterval = 0.062,
+        SimulationTimer = 0.070,
+        PrioritizePing = true,
+        PredictJump = true,
+        PredictLag = true,
+        Gravity = 196.2
+    },
+    Spam = {
+        Enabled = true,
+        Duration = 2.0,
+        Interval = 0.06,
+        TrackTarget = true,
+    },
+    Button = {
+        Size = UDim2.fromOffset(160, 55),
+        Position = UDim2.new(1, -180, 1, -75),
+    }
 }
 
-local TargetHistory = {}
+local ESPObjects = {}
+local PlayerRoles = {}
+local playerData = {}
+
+local VelocityHistory = {}
+local PingHistory = {}
+local EstimatedPing = 0.05
+
+local shootButtonGui = nil
+local shootButton = nil
+local isSpamming = false
 
 local function HasPistol(player)
     if not player then return false end
     local char = player.Character
     local bp = player:FindFirstChild("Backpack")
-    
     if char then
         for _, t in ipairs(char:GetChildren()) do
             if t:IsA("Tool") and (t.Name:lower():find("gun") or t.Name:lower():find("revolver") or t.Name:lower():find("pistol")) then
@@ -32,7 +65,6 @@ local function HasPistol(player)
             end
         end
     end
-    
     if bp then
         for _, t in ipairs(bp:GetChildren()) do
             if t:IsA("Tool") and (t.Name:lower():find("gun") or t.Name:lower():find("revolver") or t.Name:lower():find("pistol")) then
@@ -40,111 +72,244 @@ local function HasPistol(player)
             end
         end
     end
-    
     return false
 end
 
-local function HasWeapon(player)
-    if not player then return false end
+local remotes = ReplicatedStorage:WaitForChild("Remotes", 5)
+if remotes then
+    local gameplay = remotes:WaitForChild("Gameplay", 5)
+    if gameplay then
+        local playerDataEvent = gameplay:WaitForChild("PlayerDataChanged", 5)
+        if playerDataEvent then
+            playerDataEvent.OnClientEvent:Connect(function(data)
+                playerData = data or {}
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player ~= LocalPlayer then
+                        UpdatePlayerRole(player)
+                    end
+                end
+            end)
+        end
+    end
+end
+
+local function GetRoleFromPlayerData(player)
+    if not playerData then return nil end
+    local data = playerData[player.Name]
+    if data and data.Role then return data.Role end
+    return nil
+end
+
+local function GetRoleFromTools(player)
     local char = player.Character
     local bp = player:FindFirstChild("Backpack")
-    
-    if char then
-        for _, t in ipairs(char:GetChildren()) do
-            if t:IsA("Tool") and (t.Name:lower():find("gun") or t.Name:lower():find("revolver") or t.Name:lower():find("pistol") or t.Name:lower():find("knife") or t.Name:lower():find("blade") or t.Name:lower():find("sword")) then
-                return true
+    if char and char:FindFirstChild("Knife") then return "Murderer" end
+    if char and char:FindFirstChild("Gun") then return "Sheriff" end
+    if bp and bp:FindFirstChild("Knife") then return "Murderer" end
+    if bp and bp:FindFirstChild("Gun") then return "Sheriff" end
+    return nil
+end
+
+function GetRole(player)
+    local role = GetRoleFromPlayerData(player)
+    if role then return role end
+    role = GetRoleFromTools(player)
+    if role then return role end
+    if player.Character then
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid and humanoid.Health > 0 then
+            for name, data in pairs(playerData) do
+                if data.Role == "Murderer" or data.Role == "Sheriff" or data.Role == "Hero" then
+                    return "Innocent"
+                end
             end
         end
     end
-    
-    if bp then
-        for _, t in ipairs(bp:GetChildren()) do
-            if t:IsA("Tool") and (t.Name:lower():find("gun") or t.Name:lower():find("revolver") or t.Name:lower():find("pistol") or t.Name:lower():find("knife") or t.Name:lower():find("blade") or t.Name:lower():find("sword")) then
-                return true
-            end
+    return "Unknown"
+end
+
+function UpdatePlayerRole(player)
+    local success, newRole = pcall(GetRole, player)
+    if not success then return PlayerRoles[player] or "Unknown" end
+    local oldRole = PlayerRoles[player]
+    if newRole ~= oldRole then
+        PlayerRoles[player] = newRole
+    end
+    return newRole
+end
+
+task.spawn(function()
+    while true do
+        local currentPing = 0.05
+        pcall(function()
+            currentPing = Stats.Network.ServerStatsItem["Data Ping"]:GetValue() / 1000
+        end)
+
+        table.insert(PingHistory, 1, currentPing)
+        while #PingHistory > 10 do table.remove(PingHistory) end
+
+        local sum = 0
+        for _, v in ipairs(PingHistory) do sum = sum + v end
+        EstimatedPing = #PingHistory > 0 and (sum / #PingHistory) or 0.05
+
+        task.wait(0.05)
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        local char = player.Character
+        if not char then continue end
+
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then continue end
+
+        if not VelocityHistory[player] then
+            VelocityHistory[player] = {}
+        end
+
+        table.insert(VelocityHistory[player], 1, root.AssemblyLinearVelocity)
+        while #VelocityHistory[player] > 5 do
+            table.remove(VelocityHistory[player])
         end
     end
-    
-    return false
+end)
+
+local function GetFilteredVelocity(player, rawVelocity)
+    if not Config.OverdrivePrediction.PredictLag then return rawVelocity end
+    local history = VelocityHistory[player]
+    if not history or #history == 0 then return rawVelocity end
+
+    local sum = Vector3.zero
+    for _, vel in ipairs(history) do
+        sum = sum + vel
+    end
+    return sum / #history
+end
+
+local function GetPrediction(target)
+    if not target or not target.Character then return nil end
+    local char = target.Character
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not root or not hum or hum.Health <= 0 then return nil end
+
+    local currentPos = root.Position
+    local velocity = GetFilteredVelocity(target, root.AssemblyLinearVelocity)
+
+    local dt = Config.OverdrivePrediction.PredictionInterval
+    if Config.OverdrivePrediction.PrioritizePing then
+        dt = dt + EstimatedPing
+    end
+    dt = math.min(dt, Config.OverdrivePrediction.SimulationTimer)
+
+    local horizontalVel = Vector3.new(velocity.X, 0, velocity.Z) * Config.OverdrivePrediction.HorizontalMultiplier
+    local verticalVelY = velocity.Y * Config.OverdrivePrediction.VerticalMultiplier
+
+    local predictedHorizontal = currentPos + (horizontalVel * dt)
+    local predictedY = currentPos.Y + (verticalVelY * dt)
+
+    if Config.OverdrivePrediction.PredictJump then
+        local state = hum:GetState()
+        if state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall then
+            predictedY = predictedY - (0.5 * Config.OverdrivePrediction.Gravity * dt * dt)
+        end
+    end
+
+    local finalPos = Vector3.new(predictedHorizontal.X, predictedY, predictedHorizontal.Z)
+    finalPos = finalPos + Config.OverdrivePrediction.PositionOffset
+
+    return finalPos
 end
 
 local function GetSATarget()
-    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return nil end
-    
-    if not HasPistol(LocalPlayer) then 
-        return nil 
-    end
-    
-    local closest, closestDist = nil, math.huge
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr == LocalPlayer then continue end
-        if not plr.Character then continue end
-        
-        if not HasWeapon(plr) then continue end
-        
-        local root = plr.Character:FindFirstChild("HumanoidRootPart")
+    if not HasPistol(LocalPlayer) then return nil end
+
+    local myChar = LocalPlayer.Character
+    if not myChar then return nil end
+    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return nil end
+
+    local bestTarget = nil
+    local bestScore = -math.huge
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        if not player.Character then continue end
+
+        local role = PlayerRoles[player] or "Unknown"
+        local rolePriority = {
+            Murderer = 1000,
+            Sheriff = 800,
+            Hero = 600,
+            Innocent = 100,
+            Unknown = 50
+        }
+
+        local root = player.Character:FindFirstChild("HumanoidRootPart")
         if not root then continue end
-        local d = (root.Position - myRoot.Position).Magnitude
-        if d < closestDist then 
-            closestDist = d 
-            closest = plr 
+
+        local distance = (root.Position - myHRP.Position).Magnitude
+        local velocity = root.AssemblyLinearVelocity.Magnitude
+
+        local score = (rolePriority[role] or 0)
+            - (distance * 0.05)
+            - (velocity * 1)
+
+        if score > bestScore then
+            bestScore = score
+            bestTarget = player
         end
     end
-    return closest
+
+    return bestTarget
 end
 
-local function GetSAPrediction(target)
-    if not target or not target.Character then return nil end
-    local root = target.Character:FindFirstChild("HumanoidRootPart")
-    local hum = target.Character:FindFirstChildOfClass("Humanoid")
-    if not root or not hum then return nil end
+local function Shoot(gunTool, target)
+    if not gunTool or not target then return false end
 
-    local ping = (pcall(function() return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() end) and Stats.Network.ServerStatsItem["Data Ping"]:GetValue() or 100) / 1000
-    local t = ping + 0.03
+    local char = LocalPlayer.Character
+    if not char then return false end
 
-    local currentPos = root.Position
-    local currentVel = root.AssemblyLinearVelocity
-    
-    local history = TargetHistory[target.UserId] or {lastVel = currentVel, lastTime = tick()}
-    local now = tick()
-    local dt = math.max(now - history.lastTime, 0.016)
-    
-    local acceleration = (currentVel - history.lastVel) / dt
-    
-    TargetHistory[target.UserId] = {lastVel = currentVel, lastTime = now}
-    
-    local gravity = (hum:GetState() == Enum.HumanoidStateType.Freefall or hum:GetState() == Enum.HumanoidStateType.Jumping) and Workspace.Gravity or 0
-    
-    local predX = currentPos.X + (currentVel.X * t) + (0.5 * acceleration.X * (t ^ 2))
-    local predY = currentPos.Y + (currentVel.Y * t) + (0.5 * (acceleration.Y - gravity) * (t ^ 2))
-    local predZ = currentPos.Z + (currentVel.Z * t) + (0.5 * acceleration.Z * (t ^ 2))
-    
-    local predictedPos = Vector3.new(predX, predY, predZ)
-    
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-    raycastParams.FilterDescendantsInstances = {target.Character, LocalPlayer.Character}
-    local groundCheck = Workspace:Raycast(predictedPos + Vector3.new(0, 8, 0), Vector3.new(0, -16, 0), raycastParams)
-    
-    if groundCheck then
-        local floorY = groundCheck.Position.Y + (root.Size.Y / 2)
-        if predictedPos.Y < floorY then
-            predictedPos = Vector3.new(predictedPos.X, floorY, predictedPos.Z)
-        end
+    local hand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm") or char.PrimaryPart
+    if not hand then return false end
+
+    local pred = GetPrediction(target)
+    if not pred then return false end
+
+    local args = {
+        CFrame.new(hand.Position),
+        CFrame.new(pred)
+    }
+
+    local shoot = gunTool:FindFirstChild("Shoot")
+    if shoot and shoot:IsA("RemoteEvent") then
+        pcall(function()
+            shoot:FireServer(unpack(args))
+        end)
+        return true
     end
-    
-    return predictedPos
+
+    return false
 end
 
-local function SAShoot()
-    local char = LocalPlayer.Character if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid") if not hum then return end
+local function StartSpamShooting(initialTarget)
+    if isSpamming then return end
+
+    isSpamming = true
+
+    local char = LocalPlayer.Character
+    if not char then isSpamming = false return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then isSpamming = false return end
 
     local gunTool, wasEquipped = nil, false
     for _, t in ipairs(char:GetChildren()) do
         if t:IsA("Tool") and (t.Name:lower():find("gun") or t.Name:lower():find("revolver") or t.Name:lower():find("pistol")) then
-            gunTool = t wasEquipped = true break
+            gunTool = t
+            wasEquipped = true
+            break
         end
     end
     if not gunTool then
@@ -152,551 +317,311 @@ local function SAShoot()
         if bp then
             for _, t in ipairs(bp:GetChildren()) do
                 if t:IsA("Tool") and (t.Name:lower():find("gun") or t.Name:lower():find("revolver") or t.Name:lower():find("pistol")) then
-                    gunTool = t break
-                end
-            end
-        end
-    end
-    if not gunTool then return end
-
-    if not wasEquipped then
-        hum:EquipTool(gunTool)
-        task.wait(0.12)
-    end
-
-    local target = GetSATarget() if not target then
-        if not wasEquipped then hum:UnequipTools() end
-        return
-    end
-    local pred = GetSAPrediction(target) if not pred then
-        if not wasEquipped then hum:UnequipTools() end
-        return
-    end
-
-    task.spawn(function()
-        local remote = gunTool:FindFirstChild("KnifeLocal") and gunTool.KnifeLocal:FindFirstChild("CreateBeam") and gunTool.KnifeLocal.CreateBeam:FindFirstChild("RemoteFunction")
-        if remote then
-            pcall(function() remote:InvokeServer(1, pred, "AH2") end)
-        else
-            local shoot = gunTool:FindFirstChild("Shoot")
-            if shoot then
-                local hand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm") or char:FindFirstChild("LeftHand") or char.PrimaryPart
-                if hand then
-                    local shootOrigin = hand.Position
-                    pcall(function() 
-                        shoot:FireServer(CFrame.new(shootOrigin), CFrame.new(pred)) 
-                    end) 
-                end
-            else
-                pcall(function() gunTool:Activate() end)
-            end
-        end
-        task.wait(0.15)
-        if not wasEquipped then pcall(function() hum:UnequipTools() end) end
-    end)
-end
-
-local sg = Instance.new("ScreenGui")
-sg.Name = "WraithSAButton"
-sg.ResetOnSpawn = false
-sg.Parent = CoreGui
-
-local container = Instance.new("Frame")
-container.Size = UDim2.new(0, 120, 0, 120)
-container.Position = UDim2.new(0.88, 0, 0.5, -60)
-container.BackgroundTransparency = 1
-container.Parent = sg
-
-local btn = Instance.new("TextButton")
-btn.Size = UDim2.new(0, 115, 0, 115)
-btn.Position = UDim2.new(0.5, 0, 0.5, 0)
-btn.AnchorPoint = Vector2.new(0.5, 0.5)
-btn.BackgroundColor3 = Colors.Surface
-btn.BackgroundTransparency = 0.05
-btn.Text = ""
-btn.Parent = container
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0.28, 0)
-corner.Parent = btn
-
-local grad = Instance.new("UIGradient")
-grad.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Colors.Accent),
-    ColorSequenceKeypoint.new(0.5, Colors.AccentLight),
-    ColorSequenceKeypoint.new(1, Colors.AccentDark)
-}
-grad.Rotation = 45
-grad.Parent = btn
-
-local stroke = Instance.new("UIStroke")
-stroke.Color = Colors.AccentLight
-stroke.Thickness = 3.5
-stroke.Transparency = 0.2
-stroke.Parent = btn
-
-task.spawn(function()
-    while btn.Parent do
-        for i = 0, 360, 5 do
-            if not btn.Parent then break end
-            grad.Rotation = i
-            task.wait(0.03)
-        end
-    end
-end)
-
-local glow = Instance.new("ImageLabel")
-glow.Size = UDim2.new(1.4, 0, 1.4, 0)
-glow.Position = UDim2.new(0.5, 0, 0.5, 0)
-glow.AnchorPoint = Vector2.new(0.5, 0.5)
-glow.BackgroundTransparency = 1
-glow.Image = "rbxassetid://5028857084"
-glow.ImageColor3 = Colors.Accent
-glow.ImageTransparency = 0.6
-glow.ZIndex = 0
-glow.Parent = btn
-
-local cross = Instance.new("Frame")
-cross.Size = UDim2.new(0, 50, 0, 50)
-cross.Position = UDim2.new(0.5, 0, 0.5, -5)
-cross.AnchorPoint = Vector2.new(0.5, 0.5)
-cross.BackgroundTransparency = 1
-cross.Parent = btn
-
-local hLine = Instance.new("Frame")
-hLine.Size = UDim2.new(0, 40, 0, 3)
-hLine.Position = UDim2.new(0.5, 0, 0.5, 0)
-hLine.AnchorPoint = Vector2.new(0.5, 0.5)
-hLine.BackgroundColor3 = Colors.Text
-hLine.BorderSizePixel = 0
-hLine.Parent = cross
-Instance.new("UICorner", hLine).CornerRadius = UDim.new(1, 0)
-
-local vLine = Instance.new("Frame")
-vLine.Size = UDim2.new(0, 3, 0, 40)
-vLine.Position = UDim2.new(0.5, 0, 0.5, 0)
-vLine.AnchorPoint = Vector2.new(0.5, 0.5)
-vLine.BackgroundColor3 = Colors.Text
-vLine.BorderSizePixel = 0
-vLine.Parent = cross
-Instance.new("UICorner", vLine).CornerRadius = UDim.new(1, 0)
-
-local dot = Instance.new("Frame")
-dot.Size = UDim2.new(0, 8, 0, 8)
-dot.Position = UDim2.new(0.5, 0, 0.5, 0)
-dot.AnchorPoint = Vector2.new(0.5, 0.5)
-dot.BackgroundColor3 = Colors.Murder
-dot.BorderSizePixel = 0
-dot.Parent = cross
-Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-
-local label = Instance.new("TextLabel")
-label.Size = UDim2.new(1, 0, 0.35, 0)
-label.Position = UDim2.new(0, 0, 0.65, 0)
-label.BackgroundTransparency = 1
-label.Text = "SHOOT"
-label.TextSize = 15
-label.TextColor3 = Colors.Text
-label.Font = Enum.Font.GothamBold
-label.TextStrokeTransparency = 0.7
-label.Parent = btn
-
-TweenService:Create(glow, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-    ImageTransparency = 0.85,
-    Size = UDim2.new(1.6, 0, 1.6, 0)
-}):Play()
-
-TweenService:Create(cross, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-    Rotation = 360
-}):Play()
-
-local dragging = false
-local dragStart
-local startPos
-local activeInputObject = nil
-
-local function updateDrag(input)
-    local delta = input.Position - dragStart
-    container.Position = UDim2.new(
-        startPos.X.Scale, 
-        startPos.X.Offset + delta.X, 
-        startPos.Y.Scale, 
-        startPos.Y.Offset + delta.Y
-    )
-end
-
-btn.InputBegan:Connect(function(input)
-    if not dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
-        dragging = true
-        activeInputObject = input
-        dragStart = input.Position
-        startPos = container.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-                activeInputObject = nil
-            end
-        end)
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and input == activeInputObject then
-        updateDrag(input)
-    end
-end)
-
-btn.MouseButton1Click:Connect(function()
-    SAShoot()
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(10)
-        for userId, _ in pairs(TargetHistory) do
-            local found = false
-            for _, plr in ipairs(Players:GetPlayers()) do
-                if plr.UserId == userId then
-                    found = true
+                    gunTool = t
                     break
                 end
             end
-            if not found then
-                TargetHistory[userId] = nil
-            end
         end
     end
-end)
-
-print("Duel Silent Aim loaded.")
-        local d = (root.Position - myRoot.Position).Magnitude
-        if d < closestDist then closestDist = d closest = plr end
-    end
-    return closest
-end
-
-local function GetSAPrediction(target)
-    if not target or not target.Character then return nil end
-    local root = target.Character:FindFirstChild("HumanoidRootPart")
-    local hum = target.Character:FindFirstChildOfClass("Humanoid")
-    if not root or not hum then return nil end
-
-    local ping = (pcall(function() return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() end) and Stats.Network.ServerStatsItem["Data Ping"]:GetValue() or 100) / 1000
-    local t = ping
-
-    local currentPos = root.Position
-    local currentVel = root.AssemblyLinearVelocity
-    
-    local history = TargetHistory[target.UserId] or {lastVel = currentVel, lastTime = tick()}
-    local now = tick()
-    local dt = math.max(now - history.lastTime, 0.016)
-    
-    local acceleration = (currentVel - history.lastVel) / dt
-    
-    TargetHistory[target.UserId] = {lastVel = currentVel, lastTime = now}
-    
-    local gravity = (hum:GetState() == Enum.HumanoidStateType.Freefall or hum:GetState() == Enum.HumanoidStateType.Jumping) and Workspace.Gravity or 0
-    
-    local predX = currentPos.X + (currentVel.X * t) + (0.5 * acceleration.X * (t ^ 2))
-    local predY = currentPos.Y + (currentVel.Y * t) + (0.5 * (acceleration.Y - gravity) * (t ^ 2))
-    local predZ = currentPos.Z + (currentVel.Z * t) + (0.5 * acceleration.Z * (t ^ 2))
-    
-    local predictedPos = Vector3.new(predX, predY, predZ)
-    
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-    raycastParams.FilterDescendantsInstances = {target.Character, LocalPlayer.Character}
-    local groundCheck = Workspace:Raycast(predictedPos + Vector3.new(0, 8, 0), Vector3.new(0, -16, 0), raycastParams)
-    
-    if groundCheck then
-        local floorY = groundCheck.Position.Y + (root.Size.Y / 2)
-        if predictedPos.Y < floorY then
-            predictedPos = Vector3.new(predictedPos.X, floorY, predictedPos.Z)
-        end
-    end
-    
-    return predictedPos
-end
-
-local function SAShoot()
-    local char = LocalPlayer.Character if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid") if not hum then return end
-
-    local gunTool, wasEquipped = nil, false
-    for _, t in ipairs(char:GetChildren()) do
-        if t:IsA("Tool") and (t.Name:lower():find("gun") or t.Name:lower():find("revolver")) then
-            gunTool = t wasEquipped = true break
-        end
-    end
-    if not gunTool then
-        local bp = LocalPlayer:FindFirstChild("Backpack")
-        if bp then
-            for _, t in ipairs(bp:GetChildren()) do
-                if t:IsA("Tool") and (t.Name:lower():find("gun") or t.Name:lower():find("revolver")) then
-                    gunTool = t break
-                end
-            end
-        end
-    end
-    if not gunTool then return end
+    if not gunTool then isSpamming = false return end
 
     if not wasEquipped then
         hum:EquipTool(gunTool)
-        task.wait(0.12)
+        task.wait(0.1)
     end
 
-    local target = GetSATarget() if not target then
-        if not wasEquipped then hum:UnequipTools() end
-        return
+    if shootButton then
+        shootButton.Text = "FIRING!!!"
+        shootButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
     end
-    local pred = GetSAPrediction(target) if not pred then
-        if not wasEquipped then hum:UnequipTools() end
-        return
-    end
+
+    local startTime = tick()
+    local currentTarget = initialTarget
 
     task.spawn(function()
-        local remote = gunTool:FindFirstChild("KnifeLocal") and gunTool.KnifeLocal:FindFirstChild("CreateBeam") and gunTool.KnifeLocal.CreateBeam:FindFirstChild("RemoteFunction")
-        if remote then
-            pcall(function() remote:InvokeServer(1, pred, "AH2") end)
-        else
-            local shoot = gunTool:FindFirstChild("Shoot")
-            if shoot then
-                local hand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm") or char:FindFirstChild("LeftHand") or char.PrimaryPart
-                if hand then
-                    local shootOrigin = hand.Position
-                    pcall(function() 
-                        shoot:FireServer(CFrame.new(shootOrigin), CFrame.new(pred)) 
-                    end) 
+        while tick() - startTime < Config.Spam.Duration do
+            if not isSpamming then break end
+
+            if Config.Spam.TrackTarget then
+                local newTarget = GetSATarget()
+                if newTarget then
+                    currentTarget = newTarget
                 end
-            else
-                pcall(function() gunTool:Activate() end)
             end
+
+            Shoot(gunTool, currentTarget)
+            task.wait(Config.Spam.Interval)
         end
-        task.wait(0.15)
-        if not wasEquipped then pcall(function() hum:UnequipTools() end) end
+
+        isSpamming = false
+
+        if shootButton then
+            shootButton.Text = "SHOOT"
+            shootButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        end
+
+        if not wasEquipped then
+            pcall(function() hum:UnequipTools() end)
+        end
     end)
 end
 
-local sg = Instance.new("ScreenGui")
-sg.Name = "WraithSAButton"
-sg.ResetOnSpawn = false
-sg.Parent = CoreGui
+local function StopSpamShooting()
+    isSpamming = false
+    if shootButton then
+        shootButton.Text = "SHOOT"
+        shootButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    end
+end
 
-local container = Instance.new("Frame")
-container.Size = UDim2.new(0, 120, 0, 160)
-container.Position = UDim2.new(0.88, 0, 0.5, -80)
-container.BackgroundTransparency = 1
-container.Parent = sg
+local function CleanupPlayer(player)
+    local esp = ESPObjects[player]
+    if esp then
+        if esp.Highlight then esp.Highlight:Destroy() end
+        ESPObjects[player] = nil
+    end
+    PlayerRoles[player] = nil
+    VelocityHistory[player] = nil
+end
 
-local btn = Instance.new("TextButton")
-btn.Size = UDim2.new(0, 115, 0, 115)
-btn.Position = UDim2.new(0.5, 0, 0, 57.5)
-btn.AnchorPoint = Vector2.new(0.5, 0.5)
-btn.BackgroundColor3 = Colors.Surface
-btn.BackgroundTransparency = 0.05
-btn.Text = ""
-btn.Parent = container
+local function CreateESP(player)
+    if player == LocalPlayer then return nil end
+    local esp = {}
 
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0.28, 0)
-corner.Parent = btn
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "MM2_ESP"
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.FillTransparency = Config.ESP.FillTransparency
+    highlight.OutlineTransparency = Config.ESP.OutlineTransparency
+    highlight.Enabled = false
+    esp.Highlight = highlight
 
-local grad = Instance.new("UIGradient")
-grad.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Colors.Accent),
-    ColorSequenceKeypoint.new(0.5, Colors.AccentLight),
-    ColorSequenceKeypoint.new(1, Colors.AccentDark)
-}
-grad.Rotation = 45
-grad.Parent = btn
+    ESPObjects[player] = esp
+    return esp
+end
 
-local stroke = Instance.new("UIStroke")
-stroke.Color = Colors.AccentLight
-stroke.Thickness = 3.5
-stroke.Transparency = 0.2
-stroke.Parent = btn
+local function UpdateESP()
+    if not Config.ESP.Enabled then
+        for _, esp in pairs(ESPObjects) do
+            if esp.Highlight then esp.Highlight.Enabled = false end
+        end
+        return
+    end
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        local character = player.Character
+        if not character then 
+            local esp = ESPObjects[player]
+            if esp then
+                if esp.Highlight then esp.Highlight.Enabled = false end
+            end
+            continue 
+        end
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if not hrp then 
+            local esp = ESPObjects[player]
+            if esp then
+                if esp.Highlight then esp.Highlight.Enabled = false end
+            end
+            continue 
+        end
+
+        local esp = ESPObjects[player]
+        if not esp then esp = CreateESP(player) end
+
+        if esp.Highlight.Parent ~= character then
+            esp.Highlight.Parent = character
+        end
+
+        local role = PlayerRoles[player] or "Unknown"
+        local color = Config.ESP.Colors[role] or Config.ESP.Colors.Unknown
+
+        esp.Highlight.FillColor = color
+        esp.Highlight.OutlineColor = color
+        esp.Highlight.FillTransparency = Config.ESP.FillTransparency
+        esp.Highlight.OutlineTransparency = Config.ESP.OutlineTransparency
+        esp.Highlight.Enabled = true
+    end
+
+    for player in pairs(ESPObjects) do
+        if not player.Parent then
+            CleanupPlayer(player)
+        end
+    end
+end
+
+local function makeDraggable(button)
+    local dragging = false
+    local dragInput, dragStart, startPos
+
+    button.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = button.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    button.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            button.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+local function CreateShootButton()
+    if shootButtonGui then return end
+
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "MM2_ShootButton"
+    screenGui.ResetOnSpawn = false
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+    local button = Instance.new("TextButton")
+    button.Name = "ShootBtn"
+    button.Size = Config.Button.Size
+    button.Position = Config.Button.Position
+    button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    button.BackgroundTransparency = 0.2
+    button.Text = "SHOOT"
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 18
+    button.Font = Enum.Font.GothamBlack
+    button.AutoButtonColor = false
+    button.Parent = screenGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = button
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 3
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Color = Color3.fromRGB(255, 50, 50)
+    stroke.Parent = button
+
+    button.MouseEnter:Connect(function()
+        if not isSpamming then
+            TweenService:Create(button, TweenInfo.new(0.2), {Size = UDim2.fromOffset(164, 58)}):Play()
+        end
+        stroke.Color = Color3.fromRGB(255, 100, 100)
+    end)
+
+    button.MouseLeave:Connect(function()
+        if not isSpamming then
+            TweenService:Create(button, TweenInfo.new(0.2), {Size = Config.Button.Size}):Play()
+        end
+        stroke.Color = Color3.fromRGB(255, 50, 50)
+    end)
+
+    button.MouseButton1Click:Connect(function()
+        if isSpamming then
+            StopSpamShooting()
+        else
+            local target = GetSATarget()
+            if target then
+                StartSpamShooting(target)
+            end
+        end
+    end)
+
+    makeDraggable(button)
+    shootButtonGui = screenGui
+    shootButton = button
+end
+
+CreateShootButton()
+
+for _, player in pairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then
+        UpdatePlayerRole(player)
+    end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    if player ~= LocalPlayer then
+        UpdatePlayerRole(player)
+    end
+end)
+
+Players.PlayerRemoving:Connect(CleanupPlayer)
 
 task.spawn(function()
-    while btn.Parent do
-        for i = 0, 360, 5 do
-            if not btn.Parent then break end
-            grad.Rotation = i
-            task.wait(0.03)
+    while true do
+        task.wait(0.5)
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                UpdatePlayerRole(player)
+            end
         end
     end
 end)
 
-local glow = Instance.new("ImageLabel")
-glow.Size = UDim2.new(1.4, 0, 1.4, 0)
-glow.Position = UDim2.new(0.5, 0, 0.5, 0)
-glow.AnchorPoint = Vector2.new(0.5, 0.5)
-glow.BackgroundTransparency = 1
-glow.Image = "rbxassetid://5028857084"
-glow.ImageColor3 = Colors.Accent
-glow.ImageTransparency = 0.6
-glow.ZIndex = 0
-glow.Parent = btn
+local function SetupPlayerTracking(player)
+    if player == LocalPlayer then return end
 
-local cross = Instance.new("Frame")
-cross.Size = UDim2.new(0, 50, 0, 50)
-cross.Position = UDim2.new(0.5, 0, 0.5, -5)
-cross.AnchorPoint = Vector2.new(0.5, 0.5)
-cross.BackgroundTransparency = 1
-cross.Parent = btn
-
-local hLine = Instance.new("Frame")
-hLine.Size = UDim2.new(0, 40, 0, 3)
-hLine.Position = UDim2.new(0.5, 0, 0.5, 0)
-hLine.AnchorPoint = Vector2.new(0.5, 0.5)
-hLine.BackgroundColor3 = Colors.Text
-hLine.BorderSizePixel = 0
-hLine.Parent = cross
-Instance.new("UICorner", hLine).CornerRadius = UDim.new(1, 0)
-
-local vLine = Instance.new("Frame")
-vLine.Size = UDim2.new(0, 3, 0, 40)
-vLine.Position = UDim2.new(0.5, 0, 0.5, 0)
-vLine.AnchorPoint = Vector2.new(0.5, 0.5)
-vLine.BackgroundColor3 = Colors.Text
-vLine.BorderSizePixel = 0
-vLine.Parent = cross
-Instance.new("UICorner", vLine).CornerRadius = UDim.new(1, 0)
-
-local dot = Instance.new("Frame")
-dot.Size = UDim2.new(0, 8, 0, 8)
-dot.Position = UDim2.new(0.5, 0, 0.5, 0)
-dot.AnchorPoint = Vector2.new(0.5, 0.5)
-dot.BackgroundColor3 = Colors.Murder
-dot.BorderSizePixel = 0
-dot.Parent = cross
-Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-
-local label = Instance.new("TextLabel")
-label.Size = UDim2.new(1, 0, 0.35, 0)
-label.Position = UDim2.new(0, 0, 0.65, 0)
-label.BackgroundTransparency = 1
-label.Text = "SHOOT"
-label.TextSize = 15
-label.TextColor3 = Colors.Text
-label.Font = Enum.Font.GothamBold
-label.TextStrokeTransparency = 0.7
-label.Parent = btn
-
-local autoShotFrame = Instance.new("Frame")
-autoShotFrame.Size = UDim2.new(0, 115, 0, 35)
-autoShotFrame.Position = UDim2.new(0.5, 0, 0, 137.5)
-autoShotFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-autoShotFrame.BackgroundColor3 = Colors.Surface
-autoShotFrame.BackgroundTransparency = 0.05
-autoShotFrame.Parent = container
-
-local autoShotCorner = Instance.new("UICorner")
-autoShotCorner.CornerRadius = UDim.new(0.3, 0)
-autoShotCorner.Parent = autoShotFrame
-
-local autoShotStroke = Instance.new("UIStroke")
-autoShotStroke.Color = Colors.Red
-autoShotStroke.Thickness = 2
-autoShotStroke.Parent = autoShotFrame
-
-local autoShotBtn = Instance.new("TextButton")
-autoShotBtn.Size = UDim2.new(1, 0, 1, 0)
-autoShotBtn.BackgroundTransparency = 1
-autoShotBtn.Text = "AUTO: OFF"
-autoShotBtn.TextSize = 12
-autoShotBtn.TextColor3 = Colors.Red
-autoShotBtn.Font = Enum.Font.GothamBold
-autoShotBtn.Parent = autoShotFrame
-
-TweenService:Create(glow, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-    ImageTransparency = 0.85,
-    Size = UDim2.new(1.6, 0, 1.6, 0)
-}):Play()
-
-TweenService:Create(cross, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-    Rotation = 360
-}):Play()
-
-local dragging = false
-local dragStart
-local startPos
-local activeInputObject = nil
-
-local function updateDrag(input)
-    local delta = input.Position - dragStart
-    container.Position = UDim2.new(
-        startPos.X.Scale, 
-        startPos.X.Offset + delta.X, 
-        startPos.Y.Scale, 
-        startPos.Y.Offset + delta.Y
-    )
-end
-
-btn.InputBegan:Connect(function(input)
-    if not dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
-        dragging = true
-        activeInputObject = input
-        dragStart = input.Position
-        startPos = container.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-                activeInputObject = nil
+    local function onCharacterAdded(character)
+        UpdatePlayerRole(player)
+        character.ChildAdded:Connect(function(child)
+            if child.Name == "Knife" or child.Name == "Gun" then 
+                UpdatePlayerRole(player) 
+            end
+        end)
+        character.ChildRemoved:Connect(function(child)
+            if child.Name == "Knife" or child.Name == "Gun" then 
+                UpdatePlayerRole(player) 
             end
         end)
     end
-end)
 
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and input == activeInputObject then
-        updateDrag(input)
+    if player.Character then onCharacterAdded(player.Character) end
+    player.CharacterAdded:Connect(onCharacterAdded)
+    player.CharacterRemoving:Connect(function() 
+        PlayerRoles[player] = "Unknown" 
+    end)
+
+    local bp = player:FindFirstChild("Backpack")
+    if bp then
+        bp.ChildAdded:Connect(function(child)
+            if child.Name == "Knife" or child.Name == "Gun" then 
+                UpdatePlayerRole(player) 
+            end
+        end)
+        bp.ChildRemoved:Connect(function(child)
+            if child.Name == "Knife" or child.Name == "Gun" then 
+                UpdatePlayerRole(player) 
+            end
+        end)
     end
-end)
 
-btn.MouseButton1Click:Connect(function()
-    SAShoot()
-end)
-
-autoShotBtn.MouseButton1Click:Connect(function()
-    AutoShotActive = not AutoShotActive
-    if AutoShotActive then
-        autoShotBtn.Text = "AUTO: ON"
-        autoShotBtn.TextColor3 = Colors.Green
-        autoShotStroke.Color = Colors.Green
-    else
-        autoShotBtn.Text = "AUTO: OFF"
-        autoShotBtn.TextColor3 = Colors.Red
-        autoShotStroke.Color = Colors.Red
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(10)
-        for userId, _ in pairs(TargetHistory) do
-            local found = false
-            for _, plr in ipairs(Players:GetPlayers()) do
-                if plr.UserId == userId then
-                    found = true
-                    break
+    player.ChildAdded:Connect(function(child)
+        if child.Name == "Backpack" then
+            child.ChildAdded:Connect(function(tool)
+                if tool.Name == "Knife" or tool.Name == "Gun" then 
+                    UpdatePlayerRole(player) 
                 end
-            end
-            if not found then
-                TargetHistory[userId] = nil
-            end
+            end)
         end
-    end
-end)
+    end)
+end
 
-task.spawn(function()
-    while true do
-        task.wait(0.2)
-        if AutoShotActive then
-            pcall(SAShoot)
-        end
-    end
-end)
+for _, player in pairs(Players:GetPlayers()) do
+    SetupPlayerTracking(player)
+end
+Players.PlayerAdded:Connect(SetupPlayerTracking)
 
-print("Kinematic Prediction loaded.")
+RunService.RenderStepped:Connect(UpdateESP)
