@@ -92,17 +92,31 @@ ButtonCorner.Parent = TextButton
 local enabled = false
 local velocityConnection
 
+local function isPlayerNearby(hrp)
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local otherHrp = player.Character.HumanoidRootPart
+            if (otherHrp.Position - hrp.Position).Magnitude <= 3 then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 local function startAntiAim()
     velocityConnection = RunService.Heartbeat:Connect(function()
         local character = LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") and character:FindFirstChild("Humanoid") then
             if character.Humanoid.Health > 0 then
                 local hrp = character.HumanoidRootPart
-                local oldVelocity = hrp.AssemblyLinearVelocity
-                local multiplier = math.random(1, 2) == 1 and 4500 or -4500
-                hrp.AssemblyLinearVelocity = Vector3.new(multiplier, 0, multiplier)
-                RunService.RenderStepped:Wait()
-                hrp.AssemblyLinearVelocity = oldVelocity
+                if not isPlayerNearby(hrp) then
+                    local oldVelocity = hrp.AssemblyLinearVelocity
+                    local multiplier = math.random(1, 2) == 1 and 4500 or -4500
+                    hrp.AssemblyLinearVelocity = Vector3.new(multiplier, 0, multiplier)
+                    RunService.RenderStepped:Wait()
+                    hrp.AssemblyLinearVelocity = oldVelocity
+                end
             end
         end
     end)
