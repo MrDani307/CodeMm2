@@ -1,0 +1,129 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AntiAimGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = CoreGui
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 180, 0, 95)
+MainFrame.Position = UDim2.new(0.5, -90, 0.5, -47)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 10)
+MainCorner.Parent = MainFrame
+
+local dragging, dragInput, dragStart, startPos
+local function updateDrag(input)
+    local delta = input.Position - dragStart
+    local endPosition = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    TweenService:Create(MainFrame, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = endPosition}):Play()
+end
+
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        updateDrag(input)
+    end
+end)
+
+local TopBar = Instance.new("Frame")
+TopBar.Size = UDim2.new(1, 0, 0, 25)
+TopBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
+
+local TopCorner = Instance.new("UICorner")
+TopCorner.CornerRadius = UDim.new(0, 10)
+TopCorner.Parent = TopBar
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 1, 0)
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 14
+Title.TextColor3 = Color3.fromRGB(220, 220, 220)
+Title.Text = "  ANTI AIM"
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = TopBar
+
+local TextButton = Instance.new("TextButton")
+TextButton.Size = UDim2.new(1, -20, 0, 50)
+TextButton.Position = UDim2.new(0, 10, 0, 35)
+TextButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+TextButton.Font = Enum.Font.SourceSansBold
+TextButton.TextSize = 16
+TextButton.TextColor3 = Color3.fromRGB(255, 60, 60)
+TextButton.Text = "Anti-Aim: OFF"
+TextButton.Parent = MainFrame
+
+local ButtonCorner = Instance.new("UICorner")
+ButtonCorner.CornerRadius = UDim.new(0, 8)
+ButtonCorner.Parent = TextButton
+
+local enabled = false
+local velocityConnection
+
+local function startAntiAim()
+    velocityConnection = RunService.Heartbeat:Connect(function()
+        local character = LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") and character:FindFirstChild("Humanoid") then
+            if character.Humanoid.Health > 0 then
+                local hrp = character.HumanoidRootPart
+                local oldVelocity = hrp.AssemblyLinearVelocity
+                local multiplier = math.random(1, 2) == 1 and 4500 or -4500
+                hrp.AssemblyLinearVelocity = Vector3.new(multiplier, 0, multiplier)
+                RunService.RenderStepped:Wait()
+                hrp.AssemblyLinearVelocity = oldVelocity
+            end
+        end
+    end)
+end
+
+local function stopAntiAim()
+    if velocityConnection then
+        velocityConnection:Disconnect()
+        velocityConnection = nil
+    end
+end
+
+TextButton.MouseButton1Click:Connect(function()
+    enabled = not enabled
+    if enabled then
+        TextButton.Text = "Anti-Aim: ON"
+        TextButton.TextColor3 = Color3.fromRGB(60, 255, 60)
+        startAntiAim()
+    else
+        TextButton.Text = "Anti-Aim: OFF"
+        TextButton.TextColor3 = Color3.fromRGB(255, 60, 60)
+        stopAntiAim()
+    end
+end)
