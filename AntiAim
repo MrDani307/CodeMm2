@@ -96,7 +96,7 @@ local function isPlayerNearby(hrp)
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
             local otherHrp = player.Character.HumanoidRootPart
-            if (otherHrp.Position - hrp.Position).Magnitude <= 3 then
+            if (otherHrp.Position - hrp.Position).Magnitude <= 6 then
                 return true
             end
         end
